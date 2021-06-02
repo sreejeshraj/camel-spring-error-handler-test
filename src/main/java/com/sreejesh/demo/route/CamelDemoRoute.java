@@ -3,6 +3,7 @@ package com.sreejesh.demo.route;
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.component.file.GenericFileOperationFailedException;
 import org.apache.camel.impl.ThrottlingExceptionRoutePolicy;
 import org.apache.camel.spi.RoutePolicy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -25,32 +26,41 @@ public class CamelDemoRoute extends RouteBuilder {
 
 		// @formatter:off
 
-		int threshold = 2;
+/*		int threshold = 2;
 		long failureWindow = 30000;
 		long halfOpenAfter = 120000;
 		RoutePolicy routePolicy = new ThrottlingExceptionRoutePolicy(threshold, failureWindow, halfOpenAfter, null);
-		
+		*/
+
+
 //		errorHandler(deadLetterChannel("seda:errorQueue").useOriginalMessage().maximumRedeliveries(3).redeliveryDelay(1000));
-
-
+//      toggle the below handled to true and false to see how the exception returns to the from endpoint
+        onException(GenericFileOperationFailedException.class).handled(true).to("seda:onExceptionQueue");
 
 		from("timer://myTimer?period=5s")
 		.routeId("InputFolderToTestSedaRoute")
 		.setBody(exchangeProperty(Exchange.TIMER_FIRED_TIME))
 		.convertBodyTo(String.class)
 		.to("seda://testSeda")
-		.log("**** Input data published to  testSeda - ${body}***** :")
+		.log("**** Input data published to  testSeda - ${body} >>>>> TimerCount - ${exchangeProperty.CamelTimerCounter}***** :")
 		;
 
 		from("seda://testSeda")
 		.routeId("TestSedaToOutputFolderRoute")
-		.routePolicy(routePolicy)
+//		.routePolicy(routePolicy)
 		.to("file://{{outputFolder}}?autoCreate=false&fileName=TimerFile-${exchangeProperty.CamelTimerCounter}")
 //		.to("file://{{outputFolder}}?fileName=TimerFile-${exchangeProperty.CamelTimerCounter}.txt")
 		;
 		
 		//Error Handling route!
 		
+		from("seda:onExceptionQueue")
+		.routeId("OnExceptionHandlingRoute")
+		.log("***** error body: ${body} *****")
+		.to("file://{{onException}}?fileName=TimerFile-${exchangeProperty.CamelTimerCounter}.txt")
+		.log("***** <<<<<onExceptionQueue>>>>> Caught: ${exception} *****")
+		;
+
 		from("seda:errorQueue")
 		.routeId("ErrorHandlingRoute")
 		.log("***** error body: ${body} *****")
